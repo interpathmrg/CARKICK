@@ -1,0 +1,235 @@
+services:
+  zookeeper:
+    image: bitnami/zookeeper:3.9.1
+    container_name: zookeeper
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: 'yes'
+    ports:
+      - "2181:2181"
+    networks:
+      - iot_net
+
+  kafka1:
+    image: bitnami/kafka:3.7.0
+    container_name: kafka1
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka1:9092
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      ALLOW_PLAINTEXT_LISTENER: 'yes'
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka_data1:/bitnami/kafka
+    networks:
+      - iot_net
+
+  kafka2:
+    image: bitnami/kafka:3.7.0
+    container_name: kafka2
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 2
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka2:9093
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      ALLOW_PLAINTEXT_LISTENER: 'yes'
+    ports:
+      - "9093:9093"
+    volumes:
+      - kafka_data2:/bitnami/kafka
+    networks:
+      - iot_net
+
+  kafka3:
+    image: bitnami/kafka:3.7.0
+    container_name: kafka3
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 3
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9094
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka3:9094
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      ALLOW_PLAINTEXT_LISTENER: 'yes'
+    ports:
+      - "9094:9094"
+    volumes:
+      - kafka_data3:/bitnami/kafka
+    networks:
+      - iot_net
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8090:8080"
+    depends_on:
+      - kafka1
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka1:9092,kafka2:9093,kafka3:9094
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    networks:
+      - iot_net
+
+  mosquitto:
+    image: eclipse-mosquitto
+    container_name: mosquitto
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    restart: always
+    networks:
+      - iot_net
+
+  node-red:
+    image: nodered/node-red
+    container_name: mynodered
+    ports:
+      - "1880:1880"
+    volumes:
+      - node_red_data:/data
+    depends_on:
+      - kafka1
+      - mosquitto
+    restart: always
+    networks:
+      - iot_net
+
+  sqlite:
+    image: alpine
+    container_name: sqlite
+    command: sh -c "apk add --no-cache sqlite && tail -f /dev/null"
+    volumes:
+      - ./sqlite_data:/root/db
+    networks:
+      - iot_net
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    ports:
+      - "8087:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=admin123
+      - DOCKER_INFLUXDB_INIT_ORG=esp32-org
+      - DOCKER_INFLUXDB_INIT_BUCKET=sensores
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=admin-token
+    networks:
+      - iot_net
+
+  grafana:
+    image: grafana/grafana-oss:latest
+    container_name: grafana
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - influxdb
+    networks:
+      - iot_net
+
+  airflow:
+    image: apache/airflow:2.9.1
+    container_name: airflow
+    ports:
+      - "8081:8080"
+    restart: always
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__CORE__FERNET_KEY=foobarfoobarfoobarfoobarfoobarfoobarfoobarfoobar
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+      - AIRFLOW__WEBSERVER__AUTHENTICATE=True
+      - AIRFLOW__WEBSERVER__AUTH_BACKEND=airflow.auth.backend.password_auth
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/logs:/opt/airflow/logs
+      - ./airflow/plugins:/opt/airflow/plugins
+    entrypoint: >
+      bash -c "airflow db migrate &&
+                airflow users create --username admin --password admin --firstname Miguel --lastname Gonzalez --role Admin --email admin@example.com &&
+                exec airflow webserver"
+    networks:
+      - iot_net
+
+  minio:
+    image: quay.io/minio/minio
+    container_name: minio1
+    ports:
+      - "9100:9000"
+      - "9101:9001"
+    environment:
+      MINIO_ROOT_USER: ROOTUSER
+      MINIO_ROOT_PASSWORD: AyTCg5GNoXBFiM
+    volumes:
+      - /home/mrgonzalez/minio/data:/data
+    user: "1000:1000"
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9000/minio/health/ready"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - iot_net
+
+  spark-master:
+    image: bitnami/spark:3.5.0
+    container_name: spark-master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_URL=spark://spark-master:7077
+
+    ports:
+      - "7077:7077"
+      - "8080:8080"
+    volumes:
+      - /home/mrgonzalez/Desktop/PYTHON/CARKICK/data:/data  # <-- NUEVO
+    networks:
+      - iot_net
+
+  spark-worker:
+    image: bitnami/spark:3.5.0
+    container_name: spark-worker
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+    depends_on:
+      - spark-master
+    ports:
+      - "8088:8081"
+    volumes:
+      - /home/mrgonzalez/Desktop/PYTHON/CARKICK/data:/data  # <-- NUEVO
+    networks:
+      - iot_net
+
+volumes:
+  kafka_data1:
+  kafka_data2:
+  kafka_data3:
+  node_red_data:
+  influxdb_data:
+  grafana_data:
+  spark_data:  # <-- NUEVO
+
+networks:
+  iot_net:

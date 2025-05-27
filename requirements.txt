@@ -1,0 +1,15 @@
+boto3==1.37.38
+botocore==1.37.38
+jmespath==1.0.1
+numpy==1.24.4
+pandas==2.0.3
+py4j==0.10.9.7
+pyarrow==17.0.0
+pyspark==3.5.5
+python-dateutil==2.9.0.post0
+python-dotenv==1.0.1
+pytz==2025.2
+s3transfer==0.11.5
+six==1.17.0
+tzdata==2025.2
+urllib3==1.26.20
