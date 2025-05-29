@@ -1,106 +1,105 @@
+# Referencias:
+# https://www.kaggle.com/code/zaralavii/data-mining-on-car-auction-data
+# https://www.kaggle.com/competitions/DontGetKicked/overview
+# https://jemsethio.github.io/project/do_not_get_kicked/
+#
+# Desarrollado por : Miguel R. Gonzalez
+# Apoyo programación: ChatGPTo3
+# Herramientas: MinIO,Apache Spark, MS VScode, Python, PySpark, Java JDK 
+# Auto-Auction Kick Prediction 🚗💥  con modelo RandomForest
 
-# 🚀 Conversor CSV a Parquet con Apache Spark y MinIO
+Proyecto de **Data Science con Apache Spark, MinIO y Python** que:
 
-Este proyecto convierte archivos CSV en formato Parquet utilizando Apache Spark y los carga automáticamente en un bucket S3 compatible (MinIO).
-
-## 🧰 Tecnologías utilizadas
-
-- Apache Spark
-- Pandas
-- Boto3
-- MinIO (S3 compatible)
-- Python 3.8+
-- Docker + docker-compose
-
-## 📁 Estructura esperada
-
-```
-data/
-├── csv/
-│   └── archivo.csv
-├── parquet/
-│   └── archivo.parquet
-.env
-convert_with_spark.py
-```
-
-## ⚙️ Configuración
-
-1. Crea un archivo `.env` con tus credenciales S3:
-
-```
-AWS_ACCESS_KEY_ID=ROOTUSER
-AWS_SECRET_ACCESS_KEY= ********
-```
-
-2. Asegúrate de que MinIO esté corriendo y el bucket `datasets` exista.
-
-3. Ubica los archivos `.csv` en el directorio `data/csv/`.
-
-## ▶️ Ejecución
-
-```bash
-python3 convert_with_spark.py
-```
-
-El script:
-
-- Detecta si puede usar el clúster de Spark o cae en modo local.
-- Valida cada archivo CSV.
-- Convierte el archivo a DataFrame de Spark.
-- Lo guarda como `.parquet` en el directorio `data/parquet`.
-- Sube automáticamente el archivo Parquet a MinIO.
+1. 📥  Lee los datos “Bronze” (`training.parquet`) desde MinIO  
+2. 🧹  Genera la **capa Silver** (`training.silver.parquet`) con limpieza y nuevas variables  
+3. 🔍  Ejecuta **Data Quality + EDA** con gráficos automáticos  
+4. 🤖  Entrena y evalúa un modelo **Random Forest** para predecir si una compra será un **_kick_** (`IsBadBuy = 1`)
 
 ---
 
-# 🚀 CSV to Parquet Converter with Apache Spark and MinIO
+## 🗂️ Estructura
 
-This project converts CSV files to Parquet using Apache Spark and uploads them to an S3-compatible bucket (MinIO).
+.
+├─ preview_from_minio.py # Visualización rápida de la capa Silver
+├─ utils_spark.py # Helper SparkSession (sin S3A) + exportadores CSV
+├─ data_quality_check_silver.py # Resumen de unicidad + EDA con gráficos
+├─ kick_prediction_silver.py # Entrenamiento y evaluación del modelo
+├─ eda_report/ # PNG generados por el EDA
+└─ requirements.txt
 
-## 🧰 Tech Stack
+---
+## ⚙️ Despliegue infraestructura docker
+docker-compose.yml
 
-- Apache Spark
-- Pandas
-- Boto3
-- MinIO (S3 compatible)
-- Python 3.8+
-- Docker + docker-compose
+## ⚙️ Requisitos
 
-## 📁 Expected Structure
+| Componente | Versión mínima |
+|------------|----------------|
+| Python     | 3.8           |
+| Apache Spark (local) | 3.3+ |
+| Java JDK   | 11            |
+| MinIO      | en ejecución con bucket `datasets` |
+| Dependencias Python | ver `requirements.txt` |
 
-```
-data/
-├── csv/
-│   └── file.csv
-├── parquet/
-│   └── file.parquet
-.env
-convert_with_spark.py
-```
-
-## ⚙️ Setup
-
-1. Create a `.env` file with your S3 credentials:
-
-```
-AWS_ACCESS_KEY_ID=ROOTUSER
-AWS_SECRET_ACCESS_KEY=AyTCg5GNoXBFiM
-```
-
-2. Ensure MinIO is running and the `datasets` bucket exists.
-
-3. Place your `.csv` files under `data/csv/`.
-
-## ▶️ Run
+Instala con:
 
 ```bash
-python3 convert_with_spark.py
-```
+python -m venv venv && source venv/bin/activate
+pip install -r requirements.txt
+🔑 Variables de entorno
+Crea un archivo .env en la raíz con:
 
-The script:
+env
+Copiar
+Editar
+AWS_ACCESS_KEY_ID=<tu-access-key>
+AWS_SECRET_ACCESS_KEY=<tu-secret-key>
+Las credenciales corresponden al usuario MinIO que tenga acceso de lectura/escritura al bucket datasets.
 
-- Automatically detects and connects to a Spark cluster (or falls back to local mode).
-- Validates each CSV file.
-- Converts it to a Spark DataFrame.
-- Saves it as `.parquet` locally.
-- Uploads the resulting file to MinIO.
+🚀 Uso rápido
+1. Vista previa de la capa Silver
+
+python preview_from_minio.py
+Muestra box-plots básicos y exporta tres CSV:
+
+esquema_output_semicolon.csv
+
+describe_output_semicolon.csv
+
+muestra_output_semicolon.csv
+
+2. Data Quality + EDA
+
+python data_quality_check_silver.py
+Genera valores_unicos_silver.csv
+
+Crea gráficos en ./eda_report/
+
+3. Modelado
+
+python kick_prediction_silver.py
+
+mathematica:
+AUC, F1-score, Accuracy
+y guarda:
+Importancia de variables (PNG)
+Matriz de confusión (PNG)
+Curva ROC (PNG)
+
+📂 Detalles de las capas
+Capa	Archivo	Descripción
+Bronze	training.parquet	Datos originales de la subasta
+Silver	training.silver.parquet	Limpieza: casting, indices Transmission_idx/Size_idx, selección de columnas
+
+La creación de Silver se hace con el script ETL (no incluido aquí) que encontrarás en /etl/prepare_from_minio.py.
+
+🛠️ Troubleshooting
+Mensaje	Causa /Solución
+NoSuchMethodError: PrefetchingStatistics	Evitado: usamos boto3, no S3A
+AWS_ACCESS_KEY_ID no definido	Verifica tu archivo .env
+Spark no arranca	Revisa variables JAVA_HOME, JDK 11
+
+📜 Licencia
+MIT © 2025 Miguel González
+Suministrado solo con fines educativos/demostrativos.
+
