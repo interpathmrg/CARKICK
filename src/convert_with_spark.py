@@ -5,6 +5,8 @@ import glob
 import pandas as pd
 from pyspark.sql import SparkSession
 import socket
+import shutil
+
 
 # Cargar variables del entorno
 load_dotenv()
@@ -146,7 +148,7 @@ try:
             print("   🔄 Convirtiendo a Spark DataFrame...")
             df = spark.createDataFrame(pdf)
 
-            import shutil
+            
 
             # Eliminar el archivo o directorio de salida si ya existe
             if os.path.exists(output_path):
