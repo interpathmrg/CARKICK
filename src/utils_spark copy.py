@@ -10,37 +10,14 @@
 from pyspark.sql import SparkSession
 from dotenv import load_dotenv
 import os
-import socket
-import shutil
-
 
 DEFAULT_HADOOP_AWS = "3.3.6"
 DEFAULT_AWS_SDK    = "1.12.648"
-DRIVER_HOST = "172.17.0.1"   # gateway docker0
-DRIVER_PORT = "7078"
-BLOCKM_PORT = "7079"
 
 # ────────────────────────────
 # Inicio / reutilización de Spark
 # ────────────────────────────
 
-
-def test_spark_connection(spark_master_url):
-    """Verifica si el Spark Master está accesible"""
-    try:
-        host = spark_master_url.replace('spark://', '').split(':')[0]
-        port = int(spark_master_url.replace('spark://', '').split(':')[1])
-        
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(5)
-        result = sock.connect_ex((host, port))
-        sock.close()
-        
-        return result == 0
-    except Exception as e:
-        print(f"❌ Error probando conexión: {e}")
-        return False
-    
 def iniciar_spark(
     app_name: str = "Spark App",
     master: str = "local[*]",
@@ -75,62 +52,19 @@ def iniciar_spark(
     parquet_s3_path = f"s3a://{bucket_name}/{parquet_filename}"
 
     # 5. Construir SparkSession con los paquetes
-     
-     
-     #Opciones de conexión a Spark Master (prioridad de más probable a menos probable)
-    spark_master_options = [
-        "spark://localhost:7077",     # Si ejecutas desde host
-        #"spark://spark-master:7077",  # Usando nombre del contenedor
-        #"spark://172.20.0.3:7077"     # Tu IP original
-        #"spark://0.0.0.0:7077"     # Tu IP original
-        #"local[*]",                   # Modo local primero (para debugging)
-    ]
-    
-    spark_master_url = None
-    
-    for master_url in spark_master_options:
-        print(f"🔍 Probando conexión a: {master_url}")
-        
-        if master_url == "local[*]":
-            print("⚠️ Usando modo local de Spark (sin cluster)")
-            spark_master_url = master_url
-            break
-        elif test_spark_connection(master_url):
-            print(f"✅ Conexión exitosa a: {master_url}")
-            spark_master_url = master_url
-            break
-        else:
-            print(f"❌ No se pudo conectar a: {master_url}")
-    
-    if not spark_master_url:
-        raise RuntimeError("❌ No se pudo conectar a ningún Spark Master")
-    
-    print(f"🚀 Inicializando Spark con: {spark_master_url}")
-    # Inicializar Spark
     spark = (
-    SparkSession.builder
-        .appName("carkick")                 # nombre de tu aplicación
-        .master(spark_master_url)           # URL del master: "local[4]" o "spark://host:7077"
-        # ─ Driver (host) ─
-        .config("spark.driver.bindAddress", "0.0.0.0")
-        .config("spark.driver.host", DRIVER_HOST)
-        .config("spark.driver.port", DRIVER_PORT)
-        .config("spark.blockManager.port", BLOCKM_PORT)
-        # ───── Recursos executor ─────
-        .config("spark.executor.instances", "1")
-        .config("spark.executor.cores",     "2")
-        .config("spark.executor.memory",    "2g")
-        .config("spark.cores.max",          "2")   # límite global para la app
-        # ───── Otras optimizaciones ─────
-        .config("spark.sql.adaptive.enabled", "false")
-        .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+        SparkSession.builder.appName(app_name)
+        .master(master)
+        .config("spark.jars.packages", packages)
+        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+        .config("spark.hadoop.fs.s3a.endpoint", minio_url)
+        .config("spark.hadoop.fs.s3a.access.key", access_key)
+        .config("spark.hadoop.fs.s3a.secret.key", secret_key)
+        .config("spark.hadoop.fs.s3a.path.style.access", "true")
+        .config("spark.hadoop.fs.s3a.aws.credentials.provider", "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider")
         .getOrCreate()
-)
-     # Validar que Spark está funcionando
-    print("🧪 Probando funcionalidad de Spark...")
-    test_df = spark.range(1, 5)
-    test_count = test_df.count()
-    print(f"✅ Spark funcionando correctamente. Test count: {test_count}")
+    )
+
     spark.sparkContext.setLogLevel("ERROR")
     return spark, parquet_s3_path
 
