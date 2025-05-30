@@ -193,25 +193,24 @@ services:
       - iot_net
 
   spark-master:
-    image: bitnami/spark:3.5.0
+    build:
+      context: .
+      dockerfile: Dockerfile.spark
+    image: custom-spark:3.5.0
     container_name: spark-master
     environment:
       - SPARK_MODE=master
       - SPARK_MASTER_URL=spark://spark-master:7077
-
     ports:
       - "7077:7077"
       - "8080:8080"
-      - "7078:7078"   # driver RPC (no aplica aquí)
-      - "7079:7079"   # driver BlockManager (no aplica aquí)
-
     volumes:
-      - /home/mrgonzalez/Desktop/PYTHON/CARKICK/data:/data  # <-- NUEVO
+      - /home/mrgonzalez/Desktop/PYTHON/CARKICK/data:/data
     networks:
       - iot_net
 
   spark-worker:
-    image: bitnami/spark:3.5.0
+    image: custom-spark:3.5.0
     container_name: spark-worker
     environment:
       - SPARK_MODE=worker
@@ -221,9 +220,10 @@ services:
     ports:
       - "8088:8081"
     volumes:
-      - /home/mrgonzalez/Desktop/PYTHON/CARKICK/data:/data  # <-- NUEVO
+      - /home/mrgonzalez/Desktop/PYTHON/CARKICK/data:/data
     networks:
       - iot_net
+
 
 volumes:
   kafka_data1:
