@@ -13,6 +13,9 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, upper, when, trim
 from pyspark.ml.feature import StringIndexer
 from pyspark.ml import Pipeline
+from pyspark.sql.types import DoubleType
+from pyspark.sql.functions import regexp_replace
+from pyspark.sql import functions as F
 
 # ────────── CONFIG ──────────
 BRONZE_FILE = "training.parquet"
@@ -88,7 +91,7 @@ def main():
                 "IsBadBuy", "VehYear", "VehicleAge", "VehOdo", "VehBCost",
                 "IsOnlineSale", "Transmission", "Size",
                 "MMRAcquisitionRetailAveragePrice",
-                "MMRCurrentAuctionAveragePrice", "MMRCurrentAuctionCleanPrice",
+                "MMRCurrentAuctionAveragePrice", "MMRCurrentAuctionCleanPrice", "Make",
             )
             .withColumn(
                 "Transmission_clean",
@@ -109,10 +112,36 @@ def main():
             )
         )
 
+
+        df_cleaned = (
+            df_cleaned
+            .withColumn("VehYear", col("VehYear").cast("double"))
+            .withColumn("IsOnlineSale", col("IsOnlineSale").cast("double"))
+            .withColumn("MMRAcquisitionRetailAveragePrice", regexp_replace("MMRAcquisitionRetailAveragePrice", "[$,]", "").cast(DoubleType()))
+            .withColumn("MMRCurrentAuctionAveragePrice", regexp_replace("MMRCurrentAuctionAveragePrice", "[$,]", "").cast(DoubleType()))
+            .withColumn("MMRCurrentAuctionCleanPrice", regexp_replace("MMRCurrentAuctionCleanPrice", "[$,]", "").cast(DoubleType()))
+            .withColumn("Make_clean", trim(upper(col("Make"))))
+            #----- Columnas derivadas ---------
+            .withColumn("IsAutomatic", F.when(F.col("Transmission") == "Automatic", 1).otherwise(0))
+            .withColumn("IsLuxury", F.when(F.col("Make").isin(["BMW","MINI","LINCOLN", "CADILLAC", "MERCEDES", "LEXSUS", "AUDI", "TESLA", "ACURA"]), 1).otherwise(0))
+            .withColumn("Size_SUV", F.when(F.col("Size").like("%SUV%"), 1).otherwise(0))
+            .withColumn("Make_Size", F.concat_ws("_", "Make_clean", "Size_clean"))
+        )
+
         # 3️⃣ Aplicar StringIndexer para variables categóricas
         print("🔢 Aplicando StringIndexer...")
 
         indexers = [
+            StringIndexer(
+                inputCol="Make_Size", 
+                outputCol="Make_Size_idx", 
+                handleInvalid="keep"
+            ),
+            StringIndexer(
+                inputCol="Make", 
+                outputCol="Make_idx", 
+                handleInvalid="keep"
+            ),
             StringIndexer(
                 inputCol="Transmission_clean",
                 outputCol="Transmission_idx",
@@ -123,6 +152,7 @@ def main():
                 outputCol="Size_idx",
                 handleInvalid="keep",
             ),
+
         ]
 
         pipeline = Pipeline(stages=indexers)
@@ -132,9 +162,10 @@ def main():
         # 4️⃣ Selección final de columnas Silver
         silver_columns = [
             "IsBadBuy", "VehYear", "VehicleAge", "VehOdo", "VehBCost",
-            "IsOnlineSale", "Transmission_idx", "Size_idx",
-            "MMRAcquisitionRetailAveragePrice",
+            "IsOnlineSale", "Transmission_idx", "Size_idx", "Make_idx","Make_Size_idx",
+            "Size_SUV","IsLuxury","IsAutomatic", "MMRAcquisitionRetailAveragePrice",
             "MMRCurrentAuctionAveragePrice", "MMRCurrentAuctionCleanPrice",
+
         ]
 
         silver_df = df_indexed.select(silver_columns)

@@ -56,6 +56,11 @@ def create_spark_session_s3a(app_name="KickPredictionCV_S3A"):
             .config("spark.hadoop.fs.s3a.endpoint", MINIO_SPARK_ENDPOINT)
             .config("spark.hadoop.fs.s3a.path.style.access", "true")
             .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+            # ───── Recursos executor ─────
+            .config("spark.executor.instances", "1")
+            .config("spark.executor.cores",     "2")
+            .config("spark.executor.memory",    "2g")
+            .config("spark.cores.max",          "2")   # límite global para la app
             .config("spark.jars.packages",
                     f"org.apache.hadoop:hadoop-aws:{hadoop_aws_version},"
                     f"com.amazonaws:aws-java-sdk-bundle:{aws_sdk_version}")
@@ -78,11 +83,13 @@ try:
     df_full.printSchema()
 
     # 3️⃣ Selección / casting
+    # Eliminé la columna "Make_Size_idx",
     label = "IsBadBuy"
     feature_cols = [
-        "VehicleAge", "VehOdo", "VehBCost", "IsOnlineSale",
-        "Transmission_idx", "Size_idx", "MMRAcquisitionRetailAveragePrice",
-        "MMRCurrentAuctionAveragePrice", "MMRCurrentAuctionCleanPrice",
+             "VehYear", "VehicleAge", "VehOdo", "VehBCost",
+            "IsOnlineSale", "Transmission_idx", "Size_idx", "Make_idx",
+            "Size_SUV","IsLuxury","IsAutomatic", "MMRAcquisitionRetailAveragePrice",
+            "MMRCurrentAuctionAveragePrice", "MMRCurrentAuctionCleanPrice",
     ]
 
     missing_cols = [col_name for col_name in [label] + feature_cols if col_name not in df_full.columns]

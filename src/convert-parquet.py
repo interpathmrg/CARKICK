@@ -10,12 +10,13 @@ import socket
 # Cargar variables del entorno
 load_dotenv()
 
-CSV_DIR = '/home/mrgonzalez/Desktop/PYTHON/CARKICK/data/csv'
-# PARQUET_DIR = '/home/mrgonzalez/Desktop/PYTHON/CARKICK/data/parquet' # No longer needed for primary output
+HOST_CSV_DIR = '/home/mrgonzalez/Desktop/PYTHON/CARKICK/data/csv'
+CONTAINER_CSV_DIR_FOR_SPARK = '/data/csv'
+
 BUCKET_NAME = 'datasets' # MinIO Bucket Name
 
 # S3A Configuration (ensure these are correct for your MinIO setup)
-MINIO_SPARK_ENDPOINT = "http://localhost:9100" # S3A endpoint for Spark
+MINIO_SPARK_ENDPOINT = "http://172.17.0.1:9100" # S3A endpoint for Spark
 ACCESS_KEY       = os.getenv("AWS_ACCESS_KEY_ID")
 SECRET_KEY       = os.getenv("AWS_SECRET_ACCESS_KEY")
 
@@ -40,15 +41,20 @@ def test_spark_connection(spark_master_url):
         print(f"❌ Error probando conexión a Spark Master '{spark_master_url}': {e}")
         return False
 
+# <<<--- CONFIGURACIÓN CRÍTICA ---<<<
+driver_announce_ip = "172.17.0.1" # La IP de docker0 que los contenedores SÍ PUEDEN VER
+print(f"📢 Anunciando IP del driver para los ejecutores: {driver_announce_ip}")
+
 spark = None
 try:
     spark_master_options = [
-        "local[*]",
-        "spark://localhost:7077",
-        "spark://spark-master:7077",
-        # "spark://172.20.0.3:7077" # You can add specific IPs if needed
+    "spark://172.17.0.1:7077",     # Si ejecutas desde host y está mapeado
+    "spark://localhost:7077",     # Si ejecutas desde host y está mapeado
+    "spark://spark-master:7077",  # Si el script se ejecuta DENTRO de un contenedor en la misma red Docker
+    # "spark://<IP_DEL_HOST>:7077", # Otra opción si localhost no funciona desde el script
+    "local[*]"                    # Modo local como último recurso
     ]
-    
+
     spark_master_url = None
     for master_url_option in spark_master_options:
         print(f"🔍 Probando conexión a Spark Master: {master_url_option}")
@@ -68,27 +74,22 @@ try:
     
     print(f"🚀 Inicializando Spark con Master: {spark_master_url}")
 
-    # Configure Spark Session for S3A
-    hadoop_aws_version = "3.3.4"  # Ensure this matches your Spark/Hadoop setup
-    aws_sdk_version = "1.12.367" # Ensure this matches
-
+    # ... (cerca de donde defines hadoop_aws_version y aws_sdk_version) ...
+    hadoop_aws_version = "3.3.4"
+    aws_sdk_version = "1.12.367"
+    
     spark_builder = SparkSession.builder \
         .appName("CSVtoParquetDirectToMinIO") \
         .master(spark_master_url) \
-        .config("spark.hadoop.fs.s3a.access.key", ACCESS_KEY) \
-        .config("spark.hadoop.fs.s3a.secret.key", SECRET_KEY) \
-        .config("spark.hadoop.fs.s3a.endpoint", MINIO_SPARK_ENDPOINT) \
-        .config("spark.hadoop.fs.s3a.path.style.access", "true") \
-        .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
-        .config("spark.jars.packages",
-                f"org.apache.hadoop:hadoop-aws:{hadoop_aws_version},"
-                f"com.amazonaws:aws-java-sdk-bundle:{aws_sdk_version}") \
-        .config("spark.executor.instances", "1") \
-        .config("spark.executor.cores", "2") \
-        .config("spark.executor.memory", "1g") \
-        .config("spark.cores.max", "4") \
-        .config("spark.sql.adaptive.enabled", "false") \
-        .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+        .config("spark.driver.host", driver_announce_ip) \
+            .config("spark.hadoop.fs.s3a.access.key", ACCESS_KEY) \
+            .config("spark.hadoop.fs.s3a.secret.key", SECRET_KEY)\
+            .config("spark.hadoop.fs.s3a.endpoint", MINIO_SPARK_ENDPOINT)\
+            .config("spark.hadoop.fs.s3a.path.style.access", "true")\
+            .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")\
+            .config("spark.jars.packages",
+                    f"org.apache.hadoop:hadoop-aws:{hadoop_aws_version},"\
+                    f"com.amazonaws:aws-java-sdk-bundle:{aws_sdk_version}")\
     
     spark = spark_builder.getOrCreate()
 
@@ -97,12 +98,13 @@ try:
     test_count = test_df.count()
     print(f"✅ Spark funcionando correctamente. Test count: {test_count}")
 
-    if not os.path.exists(CSV_DIR):
-        raise FileNotFoundError(f"❌ Directorio CSV no existe: {CSV_DIR}")
+    if not os.path.exists(HOST_CSV_DIR):
+        raise FileNotFoundError(f"❌ Directorio CSV no existe: {HOST_CSV_DIR}")
     
-    csv_files = [f for f in os.listdir(CSV_DIR) if f.endswith('.csv')]
+    csv_files = [f for f in os.listdir(HOST_CSV_DIR) if f.endswith('.csv')]
+
     if not csv_files:
-        print(f"⚠️ No se encontraron archivos CSV en: {CSV_DIR}")
+        print(f"⚠️ No se encontraron archivos CSV en: {HOST_CSV_DIR}")
         exit(0)
     
     print(f"📁 Encontrados {len(csv_files)} archivos CSV: {csv_files}")
@@ -125,40 +127,43 @@ try:
 
     for filename in csv_files:
         try:
-            csv_path = os.path.join(CSV_DIR, filename)
+            spark_worker_csv_path = os.path.join(CONTAINER_CSV_DIR_FOR_SPARK, filename)
             # Define the S3A path for the output Parquet "directory"
             # Spark will create a directory named parquet_filename in the bucket
             parquet_filename_on_s3 = filename.replace('.csv', '.parquet')
             s3a_output_path = f"s3a://{BUCKET_NAME}/{parquet_filename_on_s3}"
 
             print(f"\n📦 Procesando: {filename}")
-            print(f"   📍 Origen (local CSV): {csv_path}")
+            print(f"   📍 Origen (local CSV): {spark_worker_csv_path }")
             print(f"   📍 Destino (MinIO S3A): {s3a_output_path}")
 
             print("   🔍 Validando CSV con Pandas...")
-            pdf = pd.read_csv(csv_path) # Consider using spark.read.csv for very large CSVs
-            print(f"   📊 Filas: {len(pdf)}, Columnas: {len(pdf.columns)}")
+            # Dejar que Spark lea el CSV directamente
+            print("   🔄 Leyendo CSV directamente con Spark...")
+            df = spark.read.option("header", "true") \
+               .option("inferSchema", "true") \
+               .csv(spark_worker_csv_path) # Spark lee desde la ruta del worker
             
-            if pdf.empty:
-                print(f"   ⚠️ Archivo CSV vacío, saltando: {filename}")
+            if df.rdd.isEmpty():
+                print(f"   ⚠️ DataFrame de Spark vacío después de leer, saltando: {filename}")
                 continue
 
-            print("   🔄 Convirtiendo a Spark DataFrame...")
-            # For very large CSVs, it's more scalable to let Spark read the CSV directly:
-            # df = spark.read.option("header", "true").option("inferSchema", "true").csv(csv_path)
-            # However, createDataFrame from pandas is fine for moderately sized CSVs
-            df = spark.createDataFrame(pdf)
+            # Esta cuenta ahora sí se ejecutará distribuida
+            print(f"   📊 Filas leídas por Spark: {df.count()}, Columnas: {len(df.columns)}")
             
-            # No need to manually clean up S3A destination; Spark's "overwrite" mode handles it.
-            # Spark's "overwrite" mode for S3A will delete the target directory if it exists.
+            # ... justo antes de escribir ...
+            count_before_write = df.count()
+            print(f"   📏 Verificación ANTES de escribir: DataFrame tiene {count_before_write} filas.")
+            if count_before_write == 0:
+                print(f"   🛑 ALERTA: DataFrame para {filename} está vacío. No se escribirán datos Parquet.")
+                # Decide si quieres continuar y crear un directorio vacío con _SUCCESS o detenerte/manejarlo.
+                # Por ahora, para debugging, podrías dejar que continúe y cree el _SUCCESS
+                # o podrías hacer un 'continue' para saltar la escritura.
 
-            print(f"   💾 Escribiendo Parquet directamente a MinIO en {s3a_output_path}...")
-            (df.coalesce(1) # To write a single part-file within the S3A "directory"
-               .write
-               .mode("overwrite") # Overwrites the S3A "directory" if it exists
-               .parquet(s3a_output_path)
-            )
-            
+            (df.write
+            .mode("overwrite")
+            .parquet(s3a_output_path)
+)
             # The output at s3a_output_path is a directory containing _SUCCESS and part-*.parquet files.
             # If you need a single Parquet file named exactly 'file.parquet' directly in the bucket
             # (not a directory), you'd need the post-processing step with MinIO client as in claude-prepare_from_minio.py
@@ -182,7 +187,7 @@ except Exception as e:
     print("1. Verifica que los contenedores de Spark (master/worker) estén ejecutándose.")
     print("2. Verifica que MinIO esté ejecutándose y accesible en el endpoint configurado.")
     print(f"3. Verifica que el bucket '{BUCKET_NAME}' exista en MinIO.")
-    print(f"4. Verifica que el directorio CSV '{CSV_DIR}' existe y tiene archivos.")
+    print(f"4. Verifica que el directorio CSV '{HOST_CSV_DIR}' existe y tiene archivos.")
     print("5. Revisa las credenciales de MinIO en tu archivo .env.")
     print("6. Asegúrate de que las versiones de hadoop-aws y aws-java-sdk-bundle sean compatibles con tu Spark.")
 
