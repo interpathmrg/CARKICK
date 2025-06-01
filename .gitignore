@@ -8,3 +8,6 @@ __pycache__/
 *.pyd
 data/
 dontgetkicked/
+/modelos
+/output
+/src/prediction_analysis_plots

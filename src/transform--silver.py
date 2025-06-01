@@ -197,6 +197,11 @@ def main():
         verification_df = spark.read.parquet(silver_path)
         print(f"   ✓ Registros verificados: {verification_df.count():,}")
 
+        print("\n🔍 Grabando el pipeline para uso futuro...")
+        pipeline_path = "/home/mrgonzalez/Desktop/PYTHON/CARKICK/modelos/pipeline_rf"
+        pipeline_model.write().overwrite().save(pipeline_path)
+
+
     except Exception as e:
         print(f"❌ Error durante el procesamiento: {str(e)}")
         import traceback

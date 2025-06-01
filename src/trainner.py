@@ -21,6 +21,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, roc_curve, auc
+from pyspark.ml import Pipeline
+
 
 # ────────────────────────────
 # Configuración
@@ -209,6 +211,15 @@ try:
     print(f"🔹 AUC:       {auc_score:.4f}")
     print(f"🔹 F1-score:  {f1_score:.4f}")
     print(f"🔹 Accuracy:  {acc_score:.4f}")
+
+
+    #______________________ Grabemos el modelo para poderlo usar luego _____
+    modelo_path = "/home/mrgonzalez/Desktop/PYTHON/CARKICK/modelos/rf_model_final"
+    bestModel.write().overwrite().save(modelo_path)
+    print(f"📦 Modelo exportado a: {modelo_path}")
+
+    assembler_path = "/home/mrgonzalez/Desktop/PYTHON/CARKICK/modelos/assembler"
+    assembler.write().overwrite().save(assembler_path)
 
     # ───────────────────── Gráficas (se guardan localmente) ───────────────
     print("\n📊 Generando y guardando gráficas del mejor modelo...")
