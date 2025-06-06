@@ -1,6 +1,5 @@
-# .gitignore
-.env
 .gitignore
+.env
 venv/
 __pycache__/
 *.pyc
@@ -11,3 +10,5 @@ dontgetkicked/
 /modelos
 /output
 /src/prediction_analysis_plots
+/data/figures
+/src/eda_report
